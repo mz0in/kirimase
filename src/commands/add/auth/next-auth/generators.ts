@@ -8,13 +8,20 @@ import {
 import fs from "fs";
 import { ComponentLibType, DBType, ORMType } from "../../../../types.js";
 import { readConfigFile } from "../../../../utils.js";
+import {
+  formatFilePath,
+  getDbIndexPath,
+  getFilePaths,
+} from "../../../filePaths/index.js";
 
 // 1. Create app/api/auth/[...nextauth].ts
-export const apiAuthNextAuthTs = (
+export const apiAuthNextAuthTsOld = (
   providers: AuthProvider[],
   dbType: DBType | null,
-  orm: ORMType
+  orm: ORMType,
 ) => {
+  const { shared } = getFilePaths();
+  const dbIndex = getDbIndexPath();
   const providersToUse = providers.map((provider) => {
     return {
       name: provider,
@@ -25,19 +32,25 @@ export const apiAuthNextAuthTs = (
 
   return `${
     dbType !== null
-      ? `import { db } from "@/lib/db";
+      ? `import { db } from "${formatFilePath(dbIndex, {
+          prefix: "alias",
+          removeExtension: true,
+        })}";
 ${AuthDriver[orm].import}`
       : ""
   }
 import { DefaultSession, NextAuthOptions } from "next-auth";
 import NextAuth from "next-auth/next";
-import { env } from "@/lib/env.mjs"
+import { env } from "${formatFilePath(shared.init.envMjs, {
+    prefix: "alias",
+    removeExtension: false,
+  })}"
 ${providersToUse
   .map(
     (provider) =>
       `import ${capitalised(provider.name)}Provider from "next-auth/providers/${
         provider.name
-      }";`
+      }";`,
   )
   .join("\n")}
 
@@ -71,6 +84,29 @@ export { handler as GET, handler as POST };
 `;
 };
 
+export const apiAuthNextAuthTs = () => {
+  const { shared } = getFilePaths();
+
+  return `import { DefaultSession } from "next-auth";
+import NextAuth from "next-auth/next";
+import { authOptions } from "${formatFilePath(shared.auth.authUtils, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
+
+declare module "next-auth" {
+  interface Session {
+    user: DefaultSession["user"] & {
+      id: string;
+    };
+  }
+}
+
+const handler = NextAuth(authOptions);
+export { handler as GET, handler as POST };
+`;
+};
+
 // 2. create lib/auth/Provider.tsx
 export const libAuthProviderTsx = () => {
   return `"use client";
@@ -87,20 +123,112 @@ export default function NextAuthProvider({ children }: Props) {
 };
 
 // 3. create lib/auth/utils.ts
-export const libAuthUtilsTs = () => {
-  return `import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+export const libAuthUtilsTsWithoutAuthOptions = () => {
+  const { "next-auth": nextAuth } = getFilePaths();
+  return `import { authOptions } from "${formatFilePath(
+    nextAuth.nextAuthApiRoute,
+    { removeExtension: true, prefix: "alias" },
+  )}";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
 export const getUserAuth = async () => {
   const session = await getServerSession(authOptions);
-  return { session };
+  return { session } as AuthSession;
 };
 
 export const checkAuth = async () => {
   const { session } = await getUserAuth();
   if (!session) redirect("/api/auth/signin");
 };
+`;
+};
+
+export const libAuthUtilsTs = (
+  providers: AuthProvider[],
+  dbType: DBType | null,
+  orm: ORMType,
+) => {
+  const { shared } = getFilePaths();
+  const dbIndex = getDbIndexPath();
+  const providersToUse = providers.map((provider) => {
+    return {
+      name: provider,
+      providerKey: AuthProviders[provider].code,
+      website: AuthProviders[provider].website,
+    };
+  });
+
+  return `${
+    dbType !== null
+      ? `import { db } from "${formatFilePath(dbIndex, {
+          prefix: "alias",
+          removeExtension: true,
+        })}";
+${AuthDriver[orm].import}`
+      : ""
+  }
+import { DefaultSession, getServerSession, NextAuthOptions } from "next-auth";
+import { redirect } from "next/navigation";
+import { env } from "${formatFilePath(shared.init.envMjs, {
+    prefix: "alias",
+    removeExtension: false,
+  })}"
+${providersToUse
+  .map(
+    (provider) =>
+      `import ${capitalised(provider.name)}Provider from "next-auth/providers/${
+        provider.name
+      }";`,
+  )
+  .join("\n")}
+
+declare module "next-auth" {
+  interface Session {
+    user: DefaultSession["user"] & {
+      id: string;
+    };
+  }
+}
+
+export type AuthSession = {
+  session: {
+    user: {
+      id: string;
+      name?: string;
+      email?: string;
+    };
+  } | null;
+};
+
+export const authOptions: NextAuthOptions = {
+  ${
+    dbType !== null
+      ? `adapter: ${AuthDriver[orm].adapter}(db),`
+      : "// adapter: yourDBAdapterHere"
+  }
+  callbacks: {
+    session: ({ session, user }) => {
+      session.user.id = user.id;
+      return session;
+    },
+  },
+  providers: [
+     ${providersToUse.map((provider) => provider.providerKey).join(",\n    ")}
+  ],
+};
+
+
+export const getUserAuth = async () => {
+  const session = await getServerSession(authOptions);
+  return { session } as AuthSession;
+};
+
+export const checkAuth = async () => {
+  const { session } = await getUserAuth();
+  if (!session) redirect("/api/auth/signin");
+};
+
 `;
 };
 
@@ -307,10 +435,11 @@ export const verificationTokens = sqliteTable(
 
 // 5. create components/auth/SignIn.tsx
 export const createSignInComponent = (componentLib: ComponentLibType) => {
+  const { alias } = readConfigFile();
   if (componentLib === "shadcn-ui") {
     return `"use client";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { Button } from "../ui/button";
+import { Button } from "${alias}/components/ui/button";
 
 export default function SignIn() {
   const { data: session, status } = useSession();
@@ -369,7 +498,7 @@ export default function SignIn() {
       <p>Not signed in </p>
       <button
         onClick={() => signIn()}
-        className="bg-slate-900 py-2.5 px-3.5 rounded-md font-medium text-white text-sm hover:opacity-90 transition-opacity"
+        className="bg-neutral-900 py-2.5 px-3.5 rounded-md font-medium text-white text-sm hover:opacity-90 transition-opacity"
       >
         Sign in
       </button>
@@ -383,7 +512,11 @@ export default function SignIn() {
 // 6. updateTrpcTs
 export const updateTrpcTs = () => {
   const { hasSrc } = readConfigFile();
-  const filePath = `${hasSrc ? "src/" : ""}lib/server/trpc.ts`;
+  const { trpc } = getFilePaths();
+  const filePath = formatFilePath(trpc.serverTrpc, {
+    removeExtension: false,
+    prefix: "rootPath",
+  });
 
   const fileContent = fs.readFileSync(filePath, "utf-8");
 
@@ -406,13 +539,17 @@ export const protectedProcedure = t.procedure.use(isAuthed);
   fs.writeFileSync(filePath, modifiedRouterContent);
 
   consola.success(
-    "TRPC Router updated successfully to add protectedProcedure."
+    "TRPC Router updated successfully to add protectedProcedure.",
   );
 };
 
 export const enableSessionInContext = () => {
   const { hasSrc } = readConfigFile();
-  const filePath = `${hasSrc ? "src/" : ""}lib/trpc/context.ts`;
+  const { trpc } = getFilePaths();
+  const filePath = formatFilePath(trpc.trpcContext, {
+    prefix: "rootPath",
+    removeExtension: false,
+  });
 
   const fileContent = fs.readFileSync(filePath, "utf-8");
   const updatedContent = fileContent.replace(/\/\//g, "");
@@ -424,7 +561,11 @@ export const enableSessionInContext = () => {
 
 export const enableSessionInTRPCApi = () => {
   const { hasSrc } = readConfigFile();
-  const filePath = `${hasSrc ? "src/" : ""}lib/trpc/api.ts`;
+  const { trpc } = getFilePaths();
+  const filePath = formatFilePath(trpc.trpcApiTs, {
+    prefix: "rootPath",
+    removeExtension: false,
+  });
 
   const fileContent = fs.readFileSync(filePath, "utf-8");
   const updatedContent = fileContent.replace(/\/\//g, "");
@@ -436,7 +577,7 @@ export const enableSessionInTRPCApi = () => {
 
 export const createPrismaAuthSchema = (
   driver: DBType,
-  usingPlanetScale: boolean
+  usingPlanetScale: boolean,
 ) => {
   return `model Account {
   id                 String  @id @default(cuid())
@@ -489,16 +630,23 @@ model VerificationToken {
 };
 
 export const generateUpdatedRootRoute = () => {
+  const { shared } = getFilePaths();
   return `
-import SignIn from "@/components/auth/SignIn";
-import { getUserAuth } from "@/lib/auth/utils";
+import SignIn from "${formatFilePath(shared.auth.signInComponent, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
+import { getUserAuth } from "${formatFilePath(shared.auth.authUtils, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
 
 export default async function Home() {
   const { session } = await getUserAuth();
   return (
-    <main className="space-y-4 pt-2">
+    <main className="space-y-4">
       {session ? (
-        <pre className="bg-slate-100 dark:bg-slate-800 p-6">
+        <pre className="bg-card p-4 rounded-sm overflow-hidden">
           {JSON.stringify(session, null, 2)}
         </pre>
       ) : null}

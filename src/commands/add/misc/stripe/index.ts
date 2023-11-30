@@ -16,12 +16,14 @@ import path from "path";
 import {
   addPackageToConfig,
   createFile,
+  getFileLocations,
   installPackages,
   readConfigFile,
   replaceFile,
+  updateConfigFile,
 } from "../../../../utils.js";
 import { consola } from "consola";
-import fs from "fs";
+import fs, { existsSync } from "fs";
 import { addToDotEnv } from "../../orm/drizzle/generators.js";
 import {
   addToPrismaModelBulk,
@@ -46,6 +48,10 @@ import { updateClerkMiddlewareForStripe } from "../../auth/clerk/utils.js";
 import { AvailablePackage } from "../../../../types.js";
 import { updateTRPCRouter } from "../../../generate/generators/trpcRoute.js";
 import { createAccountPage } from "../../auth/shared/generators.js";
+import { formatFilePath, getFilePaths } from "../../../filePaths/index.js";
+import { libAuthUtilsTsWithoutAuthOptions } from "../../auth/next-auth/generators.js";
+import { updateRootSchema } from "../../../generate/generators/model/utils.js";
+import { AuthSubTypeMapping } from "../../utils.js";
 
 export const addStripe = async (packagesBeingInstalled: AvailablePackage[]) => {
   const {
@@ -56,19 +62,30 @@ export const addStripe = async (packagesBeingInstalled: AvailablePackage[]) => {
     driver,
     auth,
     packages: installedPackages,
+    t3,
   } = readConfigFile();
+  const { stripe, shared } = getFilePaths();
 
   const packages = packagesBeingInstalled.concat(installedPackages);
+  const authSubtype = AuthSubTypeMapping[auth];
 
-  if (orm === null || orm === undefined) {
+  if (orm === null || orm === undefined || driver === undefined) {
+    consola.warn("You cannot install Stripe without an ORM installed.");
+    updateConfigFile({ orm: undefined });
     await addPackage();
     return;
   }
-  // install packages
-  await installPackages(
-    { dev: "", regular: "stripe @stripe/stripe-js lucide-react" },
-    preferredPackageManager
-  );
+  if (t3 && auth === "next-auth") {
+    const authUtilsPath = formatFilePath(shared.auth.authUtils, {
+      prefix: "rootPath",
+      removeExtension: false,
+    });
+
+    const authUtilsExist = existsSync(authUtilsPath);
+    if (!authUtilsExist) {
+      createFile(authUtilsPath, libAuthUtilsTsWithoutAuthOptions());
+    }
+  }
 
   if (auth === "clerk") {
     updateClerkMiddlewareForStripe(rootPath);
@@ -79,7 +96,7 @@ export const addStripe = async (packagesBeingInstalled: AvailablePackage[]) => {
     addToPrismaSchema(
       `model Subscription {
   userId                 String    @unique${
-    auth !== "clerk"
+    authSubtype !== "managed"
       ? `\n  user                   User      @relation(fields: [userId], references: [id])`
       : ""
   }
@@ -93,100 +110,103 @@ export const addStripe = async (packagesBeingInstalled: AvailablePackage[]) => {
 `,
       "Subscription"
     );
-    if (auth !== "clerk") {
+    if (authSubtype !== "managed") {
       addToPrismaModelBulk("User", "\n  subscription Subscription?");
     }
   }
   if (orm === "drizzle") {
-    //     let keysToAdd: string;
-    //     let additionalCoreTypesToImport: string[];
-    //     switch (driver) {
-    //       case "pg":
-    //         keysToAdd = `
-    //   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }).unique(),
-    //   stripeSubscriptionId: varchar("stripe_subscription_id", {
-    //     length: 255,
-    //   }).unique(),
-    //   stripePriceId: varchar("stripe_price_id", { length: 255 }),
-    //   stripeCurrentPeriodEnd: timestamp("stripe_current_period_end"),
-    // `;
-    //         additionalCoreTypesToImport = ["timestamp"];
-    //         break;
-    //       case "mysql":
-    //         keysToAdd = `
-    //   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }).unique(),
-    //   stripeSubscriptionId: varchar("stripe_subscription_id", {
-    //     length: 255,
-    //   }).unique(),
-    //   stripePriceId: varchar("stripe_price_id", { length: 255 }),
-    //   stripeCurrentPeriodEnd: timestamp("stripe_current_period_end"),
-    // `;
-    //         additionalCoreTypesToImport = ["timestamp"];
-    //         break;
-    //       case "sqlite":
-    //         keysToAdd = `
-    //   stripeCustomerId: text("stripe_customer_id").unique(),
-    //   stripeSubscriptionId: text("stripe_subscription_id").unique(),
-    //   stripePriceId: text("stripe_price_id"),
-    //   stripeCurrentPeriodEnd: integer("stripe_current_period_end", {
-    //     mode: "timestamp",
-    //   }),
-    // `;
-    //         additionalCoreTypesToImport = ["integer"];
-    //         break;
-    //     }
-    //
-    //     addToDrizzleModel("users", keysToAdd, additionalCoreTypesToImport); // HERE
     createFile(
-      rootPath.concat("lib/db/schema/subscriptions.ts"),
+      formatFilePath(stripe.subscriptionSchema, {
+        prefix: "rootPath",
+        removeExtension: false,
+      }),
       generateSubscriptionsDrizzleSchema(driver, auth)
     );
+    if (t3) {
+      updateRootSchema("subscriptions");
+    }
   }
 
   // create stripe/index file
-  createFile(rootPath.concat("lib/stripe/index.ts"), generateStripeIndexTs());
+  createFile(
+    formatFilePath(stripe.stripeIndex, {
+      prefix: "rootPath",
+      removeExtension: false,
+    }),
+    generateStripeIndexTs()
+  );
   // create stripe/subscription file
   createFile(
-    rootPath.concat("lib/stripe/subscription.ts"),
+    formatFilePath(stripe.stripeSubscription, {
+      prefix: "rootPath",
+      removeExtension: false,
+    }),
     generateStripeSubscriptionTs()
   );
   // create config/subscriptions.ts
   createFile(
-    rootPath.concat("config/subscriptions.ts"),
+    formatFilePath(stripe.configSubscription, {
+      prefix: "rootPath",
+      removeExtension: false,
+    }),
     generateConfigSubscriptionsTs()
   );
   // components: create billing card
   createFile(
-    rootPath.concat("app/account/PlanSettings.tsx"),
+    formatFilePath(stripe.accountPlanSettingsComponent, {
+      prefix: "rootPath",
+      removeExtension: false,
+    }),
     generateBillingCard()
   );
   // components: create manage subscription button
   createFile(
-    rootPath.concat("app/account/billing/ManageSubscription.tsx"),
+    formatFilePath(stripe.billingManageSubscriptionComponent, {
+      prefix: "rootPath",
+      removeExtension: false,
+    }),
     generateManageSubscriptionButton()
   );
   // components: create success toast
   if (componentLib === "shadcn-ui")
     createFile(
-      rootPath.concat("app/account/billing/SuccessToast.tsx"),
+      formatFilePath(stripe.billingSuccessToast, {
+        prefix: "rootPath",
+        removeExtension: false,
+      }),
       generateSuccessToast()
     );
 
   // add billingcard to accountpage with billing card TODO
-  replaceFile(rootPath.concat("app/account/page.tsx"), createAccountPage(true));
+  replaceFile(
+    formatFilePath(shared.auth.accountPage, {
+      prefix: "rootPath",
+      removeExtension: false,
+    }),
+    createAccountPage(true)
+  );
   // create account/billing/page.tsx
   createFile(
-    rootPath.concat("app/account/billing/page.tsx"),
+    formatFilePath(stripe.accountBillingPage, {
+      prefix: "rootPath",
+      removeExtension: false,
+    }),
     generateBillingPage()
   );
   // create api/webhooks/route.ts
   createFile(
-    rootPath.concat("app/api/webhooks/stripe/route.ts"),
+    formatFilePath(stripe.stripeWebhooksApiRoute, {
+      prefix: "rootPath",
+      removeExtension: false,
+    }),
     generateStripeWebhook()
   );
   // create api/billing/manage-subscription/route.ts
   createFile(
-    rootPath.concat("app/api/billing/manage-subscription/route.ts"),
+    formatFilePath(stripe.manageSubscriptionApiRoute, {
+      prefix: "rootPath",
+      removeExtension: false,
+    }),
     generateManageSubscriptionRoute()
   );
 
@@ -207,11 +227,19 @@ export const addStripe = async (packagesBeingInstalled: AvailablePackage[]) => {
 
   // misc script updates
   addListenScriptToPackageJson();
+  // install packages
+  await installPackages(
+    { dev: "", regular: "stripe @stripe/stripe-js lucide-react" },
+    preferredPackageManager
+  );
   addPackageToConfig("stripe");
 
   if (packages.includes("trpc")) {
     createFile(
-      rootPath.concat("lib/server/routers/account.ts"),
+      formatFilePath(stripe.accountRouterTrpc, {
+        removeExtension: false,
+        prefix: "rootPath",
+      }),
       createAccountTRPCRouter()
     );
     // add to main trpc router
@@ -242,18 +270,22 @@ const addListenScriptToPackageJson = () => {
   const updatedPackageJsonData = JSON.stringify(packageJson, null, 2);
 
   // Write the updated content back to package.json
-  fs.writeFileSync(packageJsonPath, updatedPackageJsonData);
+  replaceFile(packageJsonPath, updatedPackageJsonData);
 
   consola.success("Stripe listen script added to package.json");
 };
 
 const addUtilToUtilsTs = (rootPath: string) => {
+  const { shared } = getFilePaths();
   const utilContentToAdd = `export function absoluteUrl(path: string) {
   return \`\${
     process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
   }\${path}\`;
 }`;
-  const utilsPath = rootPath.concat("lib/utils.ts");
+  const utilsPath = formatFilePath(shared.init.libUtils, {
+    prefix: "rootPath",
+    removeExtension: false,
+  });
   const utilsExist = fs.existsSync(utilsPath);
   if (utilsExist) {
     const utilsContent = fs.readFileSync(utilsPath, "utf-8");

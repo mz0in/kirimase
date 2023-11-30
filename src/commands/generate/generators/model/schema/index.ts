@@ -7,6 +7,8 @@ import {
   ORMType,
 } from "../../../../../types.js";
 import { readConfigFile } from "../../../../../utils.js";
+import { AuthSubTypeMapping } from "../../../../add/utils.js";
+import { formatFilePath, getFilePaths } from "../../../../filePaths/index.js";
 import { Schema, TypeMap } from "../../../types.js";
 import {
   addToPrismaModel,
@@ -26,7 +28,7 @@ const getUsedTypes = (fields: DBField[], mappings: TypeMap) => {
       return mappingFunction({ name: field.name }).split("(")[0];
     })
     .concat(
-      mappings.typeMappings["id"]({ name: "id" }).split("(")[0]
+      mappings.typeMappings["id"]({ name: "id" }).split("(")[0],
     ) as DrizzleColumnType[]; // Assuming number (int) is always used for the 'id' field
 };
 
@@ -35,22 +37,22 @@ const getReferenceImports = (fields: DBField[]) => {
   return referenceFields.map(
     (field) =>
       `import { ${toCamelCase(field.references)} } from "./${toCamelCase(
-        field.references
-      )}"`
+        field.references,
+      )}"`,
   );
 };
 
 const getUniqueTypes = (
   usedTypes: string[],
   belongsToUser: boolean,
-  dbType: DBType
+  dbType: DBType,
 ) => {
   return Array.from(
     new Set(
       usedTypes.concat(
-        belongsToUser ? [getReferenceFieldType("string")[dbType]] : []
-      )
-    )
+        belongsToUser ? [getReferenceFieldType("string")[dbType]] : [],
+      ),
+    ),
   );
 };
 
@@ -60,11 +62,15 @@ const generateImportStatement = (
   mappings: TypeMap,
   authType: AuthType,
   dbType?: DBType,
-  provider?: DBProvider
+  provider?: DBProvider,
 ) => {
+  const { alias } = readConfigFile();
   const { fields, belongsToUser, tableName } = schema;
+  const authSubType = AuthSubTypeMapping[authType];
   const { tableNameCamelCase, tableNameCapitalised, tableNameSingular } =
     formatTableName(tableName);
+  const { shared } = getFilePaths();
+
   if (orm === "drizzle") {
     const usedTypes = getUsedTypes(fields, mappings);
     const referenceImports = getReferenceImports(fields);
@@ -73,20 +79,29 @@ const generateImportStatement = (
     return `import { ${uniqueTypes
       .join(", ")
       .concat(
-        `, ${mappings.tableFunc}`
+        `, ${mappings.tableFunc}`,
       )} } from "drizzle-orm/${dbType}-core";\nimport { createInsertSchema, createSelectSchema } from "drizzle-zod";\nimport { z } from "zod";\n${
       referenceImports.length > 0 ? referenceImports.join("\n") : ""
     }${
-      belongsToUser && provider !== "planetscale" && authType !== "clerk"
-        ? '\nimport { users } from "./auth";'
+      belongsToUser && provider !== "planetscale" && authSubType !== "managed"
+        ? `\nimport { users } from "${formatFilePath(shared.auth.authSchema, {
+            prefix: "alias",
+            removeExtension: true,
+          })}";`
         : ""
     }
-import { get${tableNameCapitalised} } from "@/lib/api/${tableNameCamelCase}/queries";`;
+import { get${tableNameCapitalised} } from "${formatFilePath(
+      shared.orm.servicesDir,
+      { prefix: "alias", removeExtension: false },
+    )}/${tableNameCamelCase}/queries";`;
   }
   if (orm === "prisma")
-    return `import { ${tableNameSingular}Schema } from "@/zodAutoGenSchemas";
+    return `import { ${tableNameSingular}Schema } from "${alias}/zodAutoGenSchemas";
 import { z } from "zod";
-import { get${tableNameCapitalised} } from "@/lib/api/${tableNameCamelCase}/queries";
+import { get${tableNameCapitalised} } from "${formatFilePath(
+      shared.orm.servicesDir,
+      { prefix: "alias", removeExtension: false },
+    )}/${tableNameCamelCase}/queries";
 `;
 };
 
@@ -95,8 +110,8 @@ const generateFieldsForSchema = (fields: DBField[], mappings: TypeMap) => {
     .map(
       (field) =>
         `  ${toCamelCase(field.name)}: ${mappings.typeMappings[field.type](
-          field
-        )}${field.notNull ? ".notNull()" : ""}`
+          field,
+        )}${field.notNull ? ".notNull()" : ""}`,
     )
     .join(",\n");
 };
@@ -108,10 +123,10 @@ const generateIndex = (schema: Schema) => {
     ? `, (${tableNameCamelCase}) => {
   return {
     ${toCamelCase(
-      index
+      index,
     )}Index: uniqueIndex('${index}_idx').on(${tableNameCamelCase}.${toCamelCase(
-        index
-      )}),
+      index,
+    )}),
   }
 }`
     : "";
@@ -120,8 +135,9 @@ const generateIndex = (schema: Schema) => {
 const addUserReferenceIfBelongsToUser = (
   schema: Schema,
   mappings: TypeMap,
-  authType: AuthType
+  authType: AuthType,
 ) => {
+  const authSubtype = AuthSubTypeMapping[authType];
   const value = schema.belongsToUser
     ? `,\n  userId: ${mappings.typeMappings["references"]({
         name: "user_id",
@@ -130,11 +146,11 @@ const addUserReferenceIfBelongsToUser = (
         referenceIdType: "string",
       }).concat(".notNull()")},`
     : "";
-  const valueIfClerk = value.replace(
+  const valueIfManaged = value.replace(
     `.references(() => users.id, { onDelete: "cascade" })`,
-    ""
+    "",
   );
-  return authType === "clerk" ? valueIfClerk : value;
+  return authSubtype === "managed" ? valueIfManaged : value;
 };
 
 const generateDrizzleSchema = (
@@ -143,7 +159,7 @@ const generateDrizzleSchema = (
   provider: DBProvider,
   dbType: DBType,
   zodSchemas: string,
-  authType: AuthType
+  authType: AuthType,
 ) => {
   const { tableName, fields } = schema;
   const { tableNameCamelCase } = formatTableName(tableName);
@@ -154,7 +170,7 @@ const generateDrizzleSchema = (
     mappings,
     authType,
     dbType,
-    provider
+    provider,
   );
 
   const userGeneratedFields = generateFieldsForSchema(fields, mappings);
@@ -167,7 +183,7 @@ const generateDrizzleSchema = (
 ${userGeneratedFields}${addUserReferenceIfBelongsToUser(
     schema,
     mappings,
-    authType
+    authType,
   )}
 }${indexFormatted});\n`;
 
@@ -177,7 +193,7 @@ ${userGeneratedFields}${addUserReferenceIfBelongsToUser(
 const generateIndexFields = (
   schema: Schema,
   relations: DBField[],
-  usingPlanetscale: boolean
+  usingPlanetscale: boolean,
 ): string => {
   const { index, belongsToUser } = schema;
   // Handle the case where index is null and there are no relations and usingPlanetscale is false
@@ -200,7 +216,7 @@ const generateIndexFields = (
   // If using planetscale and there are relations, add relations to fields array
   if (usingPlanetscale && relations.length > 0) {
     fields = fields.concat(
-      relations.map((relation) => toCamelCase(relation.name))
+      relations.map((relation) => toCamelCase(relation.name)),
     );
   }
 
@@ -216,13 +232,14 @@ const generatePrismaSchema = (
   mappings: TypeMap,
   zodSchemas: string,
   usingPlanetscale: boolean,
-  authType: AuthType
+  authType: AuthType,
 ) => {
   const { tableNameSingularCapitalised, tableNameCamelCase } = formatTableName(
-    schema.tableName
+    schema.tableName,
   );
+  const authSubtype = AuthSubTypeMapping[authType];
   const relations = schema.fields.filter(
-    (field) => field.type === "References"
+    (field) => field.type === "References",
   );
   const prismaSchemaContent = `model ${tableNameSingularCapitalised} {
     id    String @id @default(cuid())
@@ -232,7 +249,7 @@ const generatePrismaSchema = (
   ${
     schema.belongsToUser
       ? `userId String${
-          authType === "clerk"
+          authSubtype === "managed"
             ? ""
             : "\n  user User @relation(fields: [userId], references: [id], onDelete: Cascade)"
         }`
@@ -240,10 +257,10 @@ const generatePrismaSchema = (
   }${generateIndexFields(schema, relations, usingPlanetscale)}
 }`;
   addToPrismaSchema(prismaSchemaContent, tableNameSingularCapitalised);
-  if (authType !== "clerk")
+  if (schema.belongsToUser && authSubtype === "self-hosted")
     addToPrismaModel(
       "User",
-      `${tableNameCamelCase} ${tableNameSingularCapitalised}[]`
+      `${tableNameCamelCase} ${tableNameSingularCapitalised}[]`,
     );
 
   relations.forEach((relation) => {
@@ -252,14 +269,14 @@ const generatePrismaSchema = (
       formatTableName(references);
     addToPrismaModel(
       singularCapitalised,
-      `${tableNameCamelCase} ${tableNameSingularCapitalised}[]`
+      `${tableNameCamelCase} ${tableNameSingularCapitalised}[]`,
     );
   });
   const importStatement = generateImportStatement(
     "prisma",
     schema,
     mappings,
-    authType
+    authType,
   );
 
   return `${importStatement}\n\n${zodSchemas}`;
@@ -277,7 +294,7 @@ export function generateModelContent(schema: Schema, dbType: DBType) {
       provider,
       dbType,
       zodSchemas,
-      auth
+      auth,
     );
   }
   if (orm === "prisma") {
@@ -286,7 +303,7 @@ export function generateModelContent(schema: Schema, dbType: DBType) {
       mappings,
       zodSchemas,
       provider === "planetscale",
-      auth
+      auth,
     );
   }
 }

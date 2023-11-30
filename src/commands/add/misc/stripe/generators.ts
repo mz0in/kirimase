@@ -1,5 +1,11 @@
 import { AuthType, DBType } from "../../../../types.js";
-import { readConfigFile } from "../../../../utils.js";
+import { getFileLocations, readConfigFile } from "../../../../utils.js";
+import {
+  formatFilePath,
+  getDbIndexPath,
+  getFilePaths,
+} from "../../../filePaths/index.js";
+import { AuthSubTypeMapping } from "../../utils.js";
 
 export const generateStripeIndexTs = () => {
   return `import Stripe from "stripe";
@@ -13,6 +19,8 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? "", {
 
 export const generateStripeSubscriptionTsOld = () => {
   const { orm } = readConfigFile();
+  const { stripe, shared } = getFilePaths();
+  const dbIndex = getDbIndexPath();
   let userSelect: string;
   switch (orm) {
     case "drizzle":
@@ -26,14 +34,29 @@ export const generateStripeSubscriptionTsOld = () => {
   });`;
   }
 
-  return `import { storeSubscriptionPlans } from "@/config/subscriptions";
-import { db } from "@/lib/db";${
+  return `import { storeSubscriptionPlans } from "${formatFilePath(
+    stripe.configSubscription,
+    { prefix: "alias", removeExtension: true },
+  )}";
+import { db } from "${formatFilePath(dbIndex, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";${
     orm === "drizzle"
-      ? '\nimport { users } from "@/lib/db/schema/auth";\nimport { eq } from "drizzle-orm";'
+      ? `\nimport { users } from "${formatFilePath(shared.auth.authSchema, {
+          prefix: "alias",
+          removeExtension: true,
+        })}";\nimport { eq } from "drizzle-orm";`
       : ""
   }
-import { stripe } from "@/lib/stripe";
-import { getUserAuth } from "../auth/utils";
+import { stripe } from "${formatFilePath(stripe.stripeIndex, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
+import { getUserAuth } from "${formatFilePath(shared.auth.authUtils, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
 
 export async function getUserSubscriptionPlan() {
   const { session } = await getUserAuth();
@@ -119,7 +142,8 @@ export const storeSubscriptionPlans: SubscriptionPlan[] = [
 };
 
 export const generateBillingCard = () => {
-  const { componentLib } = readConfigFile();
+  const { componentLib, alias } = readConfigFile();
+  const { shared } = getFilePaths();
   if (componentLib == "shadcn-ui") {
     return `"use client";
 import {
@@ -127,9 +151,12 @@ import {
   AccountCardBody,
   AccountCardFooter,
 } from "./AccountCard";
-import { Button } from "@/components/ui/button";
+import { Button } from "${alias}/components/ui/button";
 import Link from "next/link";
-import { AuthSession } from "@/lib/auth/utils";
+import { AuthSession } from "${formatFilePath(shared.auth.authUtils, {
+      prefix: "alias",
+      removeExtension: true,
+    })}";
 
 interface PlanSettingsProps {
   stripeSubscriptionId: string | null;
@@ -243,7 +270,7 @@ export default function PlanSettings({
           </h3>
         ) : null}
         {subscriptionPlan.stripeCurrentPeriodEnd ? (
-          <p className="text-sm mb-4 text-slate-500 ">
+          <p className="text-sm mb-4 text-neutral-500 ">
             Your plan will{" "}
             {!subscriptionPlan.isSubscribed
               ? null
@@ -261,7 +288,7 @@ export default function PlanSettings({
       </AccountCardBody>
       <AccountCardFooter description="Manage your subscription on Stripe.">
         <Link href="/account/billing">
-          <button className="bg-white px-3.5 py-2.5 font-medium text-sm rounded-lg border border-slate-200 hover:bg-slate-100">
+          <button className="bg-white px-3.5 py-2.5 font-medium text-sm rounded-lg border border-neutral-200 hover:bg-neutral-100">
             Go to billing
           </button>
         </Link>
@@ -274,13 +301,13 @@ export default function PlanSettings({
 };
 
 export const generateManageSubscriptionButton = () => {
-  const { componentLib } = readConfigFile();
+  const { componentLib, alias } = readConfigFile();
   if (componentLib === "shadcn-ui") {
     return `"use client";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "${alias}/components/ui/button";
 import React from "react";
-import { toast } from "@/components/ui/use-toast";
+import { toast } from "${alias}/components/ui/use-toast";
 import { Loader2 } from "lucide-react";
 
 interface ManageUserSubscriptionButtonProps {
@@ -403,8 +430,8 @@ export function ManageUserSubscriptionButton({
         disabled={isPending}
         className={\`w-full \${
           isCurrentPlan
-            ? "bg-slate-900 py-2.5 px-3.5 rounded-md font-medium text-white text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-            : "text-center w-full hover:bg-slate-100 px-3.5 py-2.5 font-medium text-sm rounded-md border border-slate-300"
+            ? "bg-neutral-900 py-2.5 px-3.5 rounded-md font-medium text-white text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            : "text-center w-full hover:bg-neutral-100 px-3.5 py-2.5 font-medium text-sm rounded-md border border-neutral-300"
         }\`}
       >
         {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -418,9 +445,10 @@ export function ManageUserSubscriptionButton({
 };
 
 export const generateSuccessToast = () => {
+  const { alias } = readConfigFile();
   return `"use client";
 
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "${alias}/components/ui/use-toast";
 import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
@@ -441,10 +469,17 @@ export default function SuccessToast() {
 };
 
 export const generateAccountPage = () => {
+  const { shared, stripe } = getFilePaths();
   return `import UserSettings from "./UserSettings";
 import PlanSettings from "./PlanSettings";
-import { checkAuth, getUserAuth } from "@/lib/auth/utils";
-import { getUserSubscriptionPlan } from "@/lib/stripe/subscription";
+import { checkAuth, getUserAuth } from "${formatFilePath(
+    shared.auth.authUtils,
+    { prefix: "alias", removeExtension: true },
+  )}";
+import { getUserSubscriptionPlan } from "${formatFilePath(
+    stripe.stripeSubscription,
+    { prefix: "alias", removeExtension: true },
+  )}";
 
 export default async function Account() {
   await checkAuth();
@@ -468,11 +503,12 @@ export default async function Account() {
 };
 
 export const generateBillingPage = () => {
-  const { componentLib } = readConfigFile();
+  const { componentLib, alias } = readConfigFile();
+  const { stripe, shared } = getFilePaths();
   if (componentLib === "shadcn-ui") {
     return `import SuccessToast from "./SuccessToast";
 import { ManageUserSubscriptionButton } from "./ManageSubscription";
-import { Button } from "@/components/ui/button";
+import { Button } from "${alias}/components/ui/button";
 import {
   Card,
   CardContent,
@@ -480,10 +516,19 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { storeSubscriptionPlans } from "@/config/subscriptions";
-import { checkAuth, getUserAuth } from "@/lib/auth/utils";
-import { getUserSubscriptionPlan } from "@/lib/stripe/subscription";
+} from "${alias}/components/ui/card";
+import { storeSubscriptionPlans } from "${formatFilePath(
+      stripe.configSubscription,
+      { prefix: "alias", removeExtension: true },
+    )}";
+import { checkAuth, getUserAuth } from "${formatFilePath(
+      shared.auth.authUtils,
+      { prefix: "alias", removeExtension: true },
+    )}";
+import { getUserSubscriptionPlan } from "${formatFilePath(
+      stripe.stripeSubscription,
+      { prefix: "alias", removeExtension: true },
+    )}";
 import { CheckCircle2Icon } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -585,9 +630,18 @@ export default async function Billing() {
 `;
   } else {
     return `import { ManageUserSubscriptionButton } from "./ManageSubscription";
-import { storeSubscriptionPlans } from "@/config/subscriptions";
-import { checkAuth, getUserAuth } from "@/lib/auth/utils";
-import { getUserSubscriptionPlan } from "@/lib/stripe/subscription";
+import { storeSubscriptionPlans } from "${formatFilePath(
+      stripe.configSubscription,
+      { prefix: "alias", removeExtension: true },
+    )}";
+import { checkAuth, getUserAuth } from "${formatFilePath(
+      shared.auth.authUtils,
+      { prefix: "alias", removeExtension: true },
+    )}";
+import { getUserSubscriptionPlan } from "${formatFilePath(
+      stripe.stripeSubscription,
+      { prefix: "alias", removeExtension: true },
+    )}";
 import { CheckCircle2Icon } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -608,13 +662,13 @@ export default async function Billing() {
       </Link>
       <h1 className="text-3xl font-semibold mb-4">Billing</h1>
       <div className="p-6 mb-2 rounded-lg border bg-white shadow-sm ">
-        <h3 className="uppercase text-xs font-bold text-slate-500">
+        <h3 className="uppercase text-xs font-bold text-neutral-500">
           Subscription Details
         </h3>
         <p className="text-lg font-semibold leading-none my-2">
           {subscriptionPlan.name}
         </p>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-neutral-500">
           {!subscriptionPlan.isSubscribed
             ? "You are not subscribed to any plan."
             : subscriptionPlan.isCanceled
@@ -629,15 +683,15 @@ export default async function Billing() {
         {storeSubscriptionPlans.map((plan) => (
           <div
             key={plan.id}
-            className={\`rounded-lg border bg-white text-slate-900 shadow-sm  \${
+            className={\`rounded-lg border bg-white text-neutral-900 shadow-sm  \${
               plan.name === subscriptionPlan.name
-                ? "border-slate-900"
-                : "border-slate-300"
+                ? "border-neutral-900"
+                : "border-neutral-300"
             }\`}
           >
             {plan.name === subscriptionPlan.name ? (
               <div className="w-full relative">
-                <div className="text-center px-3 py-1 bg-slate-900 text-slate-100 text-xs  w-fit rounded-l-lg rounded-t-none absolute right-0 font-semibold">
+                <div className="text-center px-3 py-1 bg-neutral-900 text-neutral-100 text-xs  w-fit rounded-l-lg rounded-t-none absolute right-0 font-semibold">
                   Current Plan
                 </div>
               </div>
@@ -646,7 +700,7 @@ export default async function Billing() {
               <div className="text-2xl font-semibold leading-none tracking-tight">
                 {plan.name}
               </div>
-              <div id="description" className="text-sm text-slate-500">
+              <div id="description" className="text-sm text-neutral-500">
                 {plan.description}
               </div>
             </div>
@@ -681,7 +735,7 @@ export default async function Billing() {
               ) : (
                 <div>
                   <Link href="/account">
-                    <button className="text-center w-full hover:bg-slate-100 px-3.5 py-2.5 font-medium text-sm rounded-md">
+                    <button className="text-center w-full hover:bg-neutral-100 px-3.5 py-2.5 font-medium text-sm rounded-md">
                       Add Email to Subscribe
                     </button>
                   </Link>
@@ -700,6 +754,8 @@ export default async function Billing() {
 
 export const generateStripeWebhookOld = () => {
   const { orm } = readConfigFile();
+  const { shared, stripe } = getFilePaths();
+  const dbIndex = getDbIndexPath();
 
   let dbCalls = { one: "", two: "", three: "" };
 
@@ -737,12 +793,21 @@ export const generateStripeWebhookOld = () => {
       break;
   }
 
-  return `import { db } from "@/lib/db";
-import { stripe } from "@/lib/stripe";
+  return `import { db } from "${formatFilePath(dbIndex, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
+import { stripe } from "${formatFilePath(stripe.stripeIndex, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
 import { headers } from "next/headers";
 import type Stripe from "stripe";${
     orm === "drizzle"
-      ? '\nimport { users } from "@/lib/db/schema/auth";\nimport { eq } from "drizzle-orm";'
+      ? `\nimport { users } from "${formatFilePath(shared.auth.authSchema, {
+          prefix: "alias",
+          removeExtension: true,
+        })}";\nimport { eq } from "drizzle-orm";`
       : ""
   }
 
@@ -814,8 +879,15 @@ export async function POST(request: Request) {
 };
 
 export const generateManageSubscriptionRoute = () => {
-  return `import { stripe } from "@/lib/stripe";
-import { absoluteUrl } from "@/lib/utils";
+  const { stripe, shared } = getFilePaths();
+  return `import { stripe } from "${formatFilePath(stripe.stripeIndex, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
+import { absoluteUrl } from "${formatFilePath(shared.init.libUtils, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
 
 interface ManageStripeSubscriptionActionProps {
   isSubscribed: boolean;
@@ -870,8 +942,9 @@ export async function POST(req: Request) {
 
 export const generateSubscriptionsDrizzleSchema = (
   driver: DBType,
-  auth: AuthType
+  auth: AuthType,
 ) => {
+  const authSubtype = AuthSubTypeMapping[auth];
   // add references for pg and sqlite
   switch (driver) {
     case "pg":
@@ -881,14 +954,18 @@ export const generateSubscriptionsDrizzleSchema = (
   timestamp,
   varchar,
 } from "drizzle-orm/pg-core";${
-        auth !== "clerk" ? `\nimport { users } from "./auth";` : ""
+        authSubtype === "self-hosted" ? `\nimport { users } from "./auth";` : ""
       }
 
 export const subscriptions = pgTable(
   "subscriptions",
   {
     userId: varchar("user_id", { length: 255 })
-      .unique()${auth !== "clerk" ? `\n      .references(() => users.id)` : ""},
+      .unique()${
+        authSubtype === "self-hosted"
+          ? `\n      .references(() => users.id)`
+          : ""
+      },
     stripeCustomerId: varchar("stripe_customer_id", { length: 255 }).unique(),
     stripeSubscriptionId: varchar("stripe_subscription_id", {
       length: 255,
@@ -936,14 +1013,18 @@ export const subscriptions = mysqlTable(
   integer,
   text
 } from "drizzle-orm/sqlite-core";${
-        auth !== "clerk" ? `\nimport { users } from "./auth";` : ""
+        authSubtype === "self-hosted" ? `\nimport { users } from "./auth";` : ""
       }
 
 export const subscriptions = sqliteTable(
   "subscriptions",
   {
     userId: text("user_id")
-      .unique()${auth !== "clerk" ? `\n      .references(() => users.id)` : ""},
+      .unique()${
+        authSubtype === "self-hosted"
+          ? `\n      .references(() => users.id)`
+          : ""
+      },
     stripeCustomerId: text("stripe_customer_id").unique(),
     stripeSubscriptionId: text("stripe_subscription_id").unique(),
     stripePriceId: text("stripe_price_id"),
@@ -963,6 +1044,8 @@ export const subscriptions = sqliteTable(
 
 export const generateStripeWebhook = () => {
   const { orm } = readConfigFile();
+  const { shared, stripe } = getFilePaths();
+  const dbIndex = getDbIndexPath();
 
   let dbCalls = { one: "", two: "", three: "" };
 
@@ -1023,12 +1106,21 @@ export const generateStripeWebhook = () => {
       break;
   }
 
-  return `import { db } from "@/lib/db";
-import { stripe } from "@/lib/stripe";
+  return `import { db } from "${formatFilePath(dbIndex, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
+import { stripe } from "${formatFilePath(stripe.stripeIndex, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
 import { headers } from "next/headers";
 import type Stripe from "stripe";${
     orm === "drizzle"
-      ? '\nimport { subscriptions } from "@/lib/db/schema/subscriptions";\nimport { eq } from "drizzle-orm";'
+      ? `\nimport { subscriptions } from "${formatFilePath(
+          stripe.subscriptionSchema,
+          { prefix: "alias", removeExtension: true },
+        )}";\nimport { eq } from "drizzle-orm";`
       : ""
   }
 
@@ -1101,6 +1193,9 @@ export async function POST(request: Request) {
 
 export const generateStripeSubscriptionTs = () => {
   const { orm } = readConfigFile();
+  const { stripe, shared } = getFilePaths();
+  const dbIndex = getDbIndexPath();
+
   let subSelect: string;
   switch (orm) {
     case "drizzle":
@@ -1117,14 +1212,29 @@ export const generateStripeSubscriptionTs = () => {
   });`;
   }
 
-  return `import { storeSubscriptionPlans } from "@/config/subscriptions";
-import { db } from "@/lib/db";${
+  return `import { storeSubscriptionPlans } from "${formatFilePath(
+    stripe.configSubscription,
+    { prefix: "alias", removeExtension: true },
+  )}";
+import { db } from "${formatFilePath(dbIndex, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";${
     orm === "drizzle"
-      ? '\nimport { subscriptions } from "@/lib/db/schema/subscriptions";\nimport { eq } from "drizzle-orm";'
+      ? `\nimport { subscriptions } from "${formatFilePath(
+          stripe.subscriptionSchema,
+          { prefix: "alias", removeExtension: true },
+        )}";\nimport { eq } from "drizzle-orm";`
       : ""
   }
-import { stripe } from "@/lib/stripe";
-import { getUserAuth } from "../auth/utils";
+import { stripe } from "${formatFilePath(stripe.stripeIndex, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
+import { getUserAuth } from "${formatFilePath(shared.auth.authUtils, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
 
 export async function getUserSubscriptionPlan() {
   const { session } = await getUserAuth();
@@ -1183,10 +1293,22 @@ export async function getUserSubscriptionPlan() {
 };
 
 export const createAccountTRPCRouter = () => {
-  return `import { getUserAuth } from "@/lib/auth/utils";
-import { publicProcedure, router } from "../trpc";
-import { getUserSubscriptionPlan } from "@/lib/stripe/subscription";
-export const accountRouter = router({
+  const { alias } = readConfigFile();
+  const { stripe, trpc, shared } = getFilePaths();
+  const { createRouterInvokcation } = getFileLocations();
+  return `import { getUserAuth } from "${formatFilePath(shared.auth.authUtils, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
+import { publicProcedure, ${createRouterInvokcation} } from "${formatFilePath(
+    trpc.serverTrpc,
+    { prefix: "alias", removeExtension: true },
+  )}";
+import { getUserSubscriptionPlan } from "${formatFilePath(
+    stripe.stripeSubscription,
+    { prefix: "alias", removeExtension: true },
+  )}";
+export const accountRouter = ${createRouterInvokcation}({
   getUser: publicProcedure.query(async () => {
     const { session } = await getUserAuth();
     return session;

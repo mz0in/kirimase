@@ -1,5 +1,5 @@
 import { confirm, select } from "@inquirer/prompts";
-import { DBType } from "../../../../types.js";
+import { DBType, InitOptions } from "../../../../types.js";
 import {
   addPackageToConfig,
   createFile,
@@ -23,25 +23,29 @@ import {
 } from "../utils.js";
 import { consola } from "consola";
 import { addToPrismaSchema } from "../../../generate/utils.js";
+import { formatFilePath, getDbIndexPath } from "../../../filePaths/index.js";
 
-export const addPrisma = async () => {
+export const addPrisma = async (initOptions?: InitOptions) => {
   const { preferredPackageManager, hasSrc } = readConfigFile();
+  const dbIndex = getDbIndexPath("prisma");
   const rootPath = hasSrc ? "src/" : "";
   // ask for db type
-  const dbType = (await select({
-    message: "Please choose your DB type",
-    choices: [
-      { name: "Postgres", value: "pg" },
-      {
-        name: "MySQL",
-        value: "mysql",
-      },
-      {
-        name: "SQLite",
-        value: "sqlite",
-      },
-    ],
-  })) as DBType;
+  const dbType =
+    initOptions?.db ||
+    ((await select({
+      message: "Please choose your DB type",
+      choices: [
+        { name: "Postgres", value: "pg" },
+        {
+          name: "MySQL",
+          value: "mysql",
+        },
+        {
+          name: "SQLite",
+          value: "sqlite",
+        },
+      ],
+    })) as DBType);
 
   // if mysql, ask if planetscale
   if (dbType === "mysql") {
@@ -77,16 +81,25 @@ export const addPrisma = async () => {
   // create .env with database_url
 
   // generate prisma global instance
-  createFile(`${rootPath}lib/db/index.ts`, generatePrismaDbInstance());
+  createFile(
+    formatFilePath(dbIndex, {
+      prefix: "rootPath",
+      removeExtension: false,
+    }),
+    generatePrismaDbInstance()
+  );
 
   // update tsconfig with import alias for prisma types
   await updateTsConfigPrismaTypeAlias();
 
-  const includeExampleModel = await confirm({
-    message:
-      "Would you like to include an example model? (suggested for new users)",
-    default: true,
-  });
+  const includeExampleModel =
+    typeof initOptions?.includeExample === "string"
+      ? initOptions.includeExample === "yes"
+      : await confirm({
+          message:
+            "Would you like to include an example model? (suggested for new users)",
+          default: true,
+        });
 
   // create all the files here
 
@@ -121,7 +134,7 @@ export const addPrisma = async () => {
 
   // install packages: regular: [] dev: [prisma, zod-prisma]
   await installPackages(
-    { regular: "zod@3.21.4 @t3-oss/env-nextjs", dev: "prisma zod-prisma" },
+    { regular: "zod @t3-oss/env-nextjs", dev: "prisma zod-prisma" },
     preferredPackageManager
   );
 

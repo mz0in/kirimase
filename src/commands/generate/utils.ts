@@ -1,4 +1,5 @@
 import path from "path";
+import pluralize from "pluralize";
 import {
   DBField,
   DBType,
@@ -8,6 +9,7 @@ import {
 import { readConfigFile, replaceFile } from "../../utils.js";
 import fs, { existsSync, readFileSync } from "fs";
 import { consola } from "consola";
+import { formatFilePath, getFilePaths } from "../filePaths/index.js";
 
 export function toCamelCase(input: string): string {
   return input
@@ -28,8 +30,13 @@ export function capitalise(input: string): string {
   return input.charAt(0).toUpperCase() + input.slice(1);
 }
 
+export function camelCaseToSnakeCase(str: string): string {
+  return str.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+}
+
 export function capitaliseForZodSchema(input: string): string {
-  return input.charAt(0).toUpperCase() + input.slice(1, -1);
+  const singularInput = pluralize.singular(input);
+  return singularInput.charAt(0).toUpperCase() + singularInput.slice(1);
 }
 
 export const formatTableName = (tableName: string) => {
@@ -38,40 +45,46 @@ export const formatTableName = (tableName: string) => {
     tableNameCamelCase.charAt(0).toUpperCase() + tableNameCamelCase.slice(1);
   const tableNameSingularCapitalised =
     capitaliseForZodSchema(tableNameCamelCase);
-  const tableNameSingular = tableNameCamelCase.slice(0, -1);
+  const tableNameSingular = pluralize.singular(tableNameCamelCase);
+  const tableNamePlural = pluralize.plural(tableNameCamelCase);
+  const tableNamePluralCapitalised =
+    tableNamePlural.charAt(0).toUpperCase() + tableNamePlural.slice(1);
   const tableNameFirstChar = tableNameCamelCase.charAt(0);
   const tableNameNormalEnglishCapitalised = toNormalEnglish(
     tableName,
     false,
-    false
+    false,
   );
   const tableNameNormalEnglishSingular = toNormalEnglish(
     tableName,
     false,
-    true
+    true,
   );
   const tableNameNormalEnglishSingularLowerCase = toNormalEnglish(
     tableName,
     true,
-    true
+    true,
   );
 
   const tableNameNormalEnglishLowerCase = toNormalEnglish(
     tableName,
     true,
-    false
+    false,
   );
+  const tableNameKebabCase = snakeToKebab(tableName);
 
   return {
     tableNameCamelCase,
     tableNameSingular,
     tableNameSingularCapitalised,
+    tableNamePluralCapitalised,
     tableNameFirstChar,
     tableNameCapitalised,
     tableNameNormalEnglishCapitalised,
     tableNameNormalEnglishSingular,
     tableNameNormalEnglishLowerCase,
     tableNameNormalEnglishSingularLowerCase,
+    tableNameKebabCase,
   };
 };
 
@@ -240,22 +253,26 @@ export const defaultValueMappings: Record<
 export function toNormalEnglish(
   input: string,
   lowercase?: boolean,
-  singular?: boolean
+  singular?: boolean,
 ): string {
   const output = input
     .split("_")
     .map((word) => capitalise(word))
     .join(" ");
 
-  const newOutput = singular ? output.slice(0, -1) : output;
+  const newOutput = singular ? pluralize.singular(output) : output;
 
   return lowercase ? newOutput.toLowerCase() : newOutput;
 }
 
 export function getCurrentSchemas() {
   const { hasSrc, orm } = readConfigFile();
+  const { shared } = getFilePaths();
   if (orm === "drizzle") {
-    const directory = `${hasSrc ? "src/" : ""}lib/db/schema`;
+    const directory = formatFilePath(shared.orm.schemaDir, {
+      removeExtension: false,
+      prefix: "rootPath",
+    });
 
     try {
       // Read the directory content
@@ -266,9 +283,11 @@ export function getCurrentSchemas() {
         .filter((file) => path.extname(file) === ".ts")
         .map((file) => path.basename(file, ".ts"));
 
-      return schemaNames.filter((schema) => schema !== "auth");
+      return schemaNames.filter(
+        (schema) => schema !== "auth" && schema !== "_root",
+      );
     } catch (error) {
-      console.error(`Error reading schemas ${directory}:`, error);
+      // console.error(`Error reading schemas ${directory}:`, error);
       return [];
     }
   }
@@ -290,7 +309,9 @@ export function getCurrentSchemas() {
         .filter((line) => line.includes("model") && line.includes("{"))
         .map((line) => line.split(" ")[1])
         .filter((item) => !excludedSchemas.includes(item))
-        .map((item) => `${item[0].toLowerCase()}${item.slice(1)}s`);
+        .map((item) =>
+          pluralize.plural(`${item[0].toLowerCase()}${item.slice(1)}`),
+        );
       return schemaNames;
     } else {
       consola.info(`Prisma schema file does not exist`);
@@ -307,7 +328,7 @@ export const addToPrismaSchema = (schema: string, modelName: string) => {
     // write logic to check if model already exists -> if so replace
     const { modelStart, modelEnd, modelExists } = getPrismaModelStartAndEnd(
       schemaContents,
-      modelName
+      modelName,
     );
 
     if (modelExists) {
@@ -330,8 +351,8 @@ export const addToPrismaSchema = (schema: string, modelName: string) => {
 export const formatPrismaModelName = (name: string) => {
   const lowerCase = name.toLowerCase();
   const firstLetter = lowerCase[0];
-  const plural = name + "s";
-  const pluralLowerCase = lowerCase + "s";
+  const plural = pluralize.plural(name);
+  const pluralLowerCase = pluralize.plural(lowerCase);
 
   return {
     lowerCase,
@@ -380,7 +401,7 @@ export function addToPrismaModel(modelName: string, attributesToAdd: string) {
 
 export function addToPrismaModelBulk(
   modelName: string,
-  attributesToAdd: string
+  attributesToAdd: string,
 ) {
   const hasSchema = existsSync("prisma/schema.prisma");
   if (!hasSchema) {

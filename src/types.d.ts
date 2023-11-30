@@ -1,3 +1,5 @@
+import { AuthProvider } from "./commands/add/auth/next-auth/utils.ts";
+
 export type DBType = "pg" | "mysql" | "sqlite";
 export type DBProviderItem = {
   name: string;
@@ -70,13 +72,15 @@ export type AvailablePackage =
   | "clerk"
   | "resend"
   | "lucia"
+  | "kinde"
   | "stripe";
 
 export type PackageType = "orm" | "auth" | "componentLib" | "misc";
 export type ComponentLibType = "shadcn-ui";
 export type ORMType = "drizzle" | "prisma";
-export type AuthType = "next-auth" | "clerk" | "lucia";
+export type AuthType = "next-auth" | "clerk" | "lucia" | "kinde";
 export type MiscType = "trpc" | "stripe" | "resend";
+export type AuthSubType = "self-hosted" | "managed";
 
 export type Config = {
   hasSrc: boolean;
@@ -87,9 +91,33 @@ export type Config = {
   orm: ORMType | null;
   auth: AuthType | null;
   componentLib: ComponentLibType | null;
+  t3: boolean;
+  alias: string;
 };
 
 export type UpdateConfig = Partial<Config>;
+
+export type InitOptions = {
+  hasSrcFolder?: "yes" | "no";
+  packageManager?: PMType;
+  orm?: ORMType;
+  db?: DBType;
+  dbProvider?: DBProvider;
+  auth?: AuthType;
+  authProviders?: AuthProvider[];
+  miscPackages?: AvailablePackage[];
+  componentLib?: ComponentLibType;
+  includeExample?: "yes" | "no";
+};
+
+// export type BuildOptions = {
+//   resources?: ("model" | "api_route" | "trpc_route" | "views_and_components")[];
+//   table?: string;
+//   belongsToUser?: "yes" | "no";
+//   index?: string;
+//   field?: DBField[];
+//   migrate?: "yes" | "no";
+// };
 
 export type ScaffoldSchema = {
   tableName: string;

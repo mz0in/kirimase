@@ -1,5 +1,6 @@
 import { checkbox, confirm, input, select } from "@inquirer/prompts";
 import { consola } from "consola";
+import pluralize from "pluralize";
 import {
   DBField,
   DBType,
@@ -10,22 +11,22 @@ import {
 import { Choice } from "@inquirer/checkbox";
 import { createOrmMappings } from "./generators/model/utils.js";
 import { scaffoldAPIRoute } from "./generators/apiRoute.js";
-import {
-  readConfigFile,
-  runCommand,
-  updateConfigFileAfterUpdate,
-} from "../../utils.js";
+import { readConfigFile, updateConfigFileAfterUpdate } from "../../utils.js";
 import { scaffoldTRPCRoute } from "./generators/trpcRoute.js";
 import { addPackage } from "../add/index.js";
 import { initProject } from "../init/index.js";
 import { Schema } from "./types.js";
 import { scaffoldViewsAndComponents } from "./generators/views.js";
-import { getCurrentSchemas, toCamelCase } from "./utils.js";
+import {
+  camelCaseToSnakeCase,
+  getCurrentSchemas,
+  toCamelCase,
+} from "./utils.js";
 import { scaffoldModel } from "./generators/model/index.js";
 
 function provideInstructions() {
   consola.info(
-    "Quickly generate your Model (Drizzle schema + queries / mutations), Controllers (API Routes and TRPC Routes), and Views"
+    "Quickly generate your Model (Drizzle schema + queries / mutations), Controllers (API Routes and TRPC Routes), and Views",
   );
 }
 
@@ -91,7 +92,7 @@ async function askForFields(orm: ORMType, dbType: DBType, tableName: string) {
     const currentSchemas = getCurrentSchemas();
 
     const baseFieldTypeChoices = Object.keys(
-      createOrmMappings()[orm][dbType].typeMappings
+      createOrmMappings()[orm][dbType].typeMappings,
     )
       .filter((field) => field !== "id")
       .map((field) => {
@@ -104,7 +105,7 @@ async function askForFields(orm: ORMType, dbType: DBType, tableName: string) {
         currentSchemas[0] === toCamelCase(tableName));
     const fieldTypeChoices = removeReferenceOption
       ? baseFieldTypeChoices.filter(
-          (field) => field.name.toLowerCase() !== "references"
+          (field) => field.name.toLowerCase() !== "references",
         )
       : baseFieldTypeChoices;
 
@@ -119,11 +120,14 @@ async function askForFields(orm: ORMType, dbType: DBType, tableName: string) {
         choices: currentSchemas
           .filter((schema) => schema !== toCamelCase(tableName))
           .map((schema) => {
-            return { name: schema, value: schema };
+            return {
+              name: camelCaseToSnakeCase(schema),
+              value: camelCaseToSnakeCase(schema),
+            };
           }),
       });
 
-      const fieldName = `${referencesTable.slice(0, -1)}_id`;
+      const fieldName = `${pluralize.singular(referencesTable)}_id`;
       const cascade = await confirm({
         message: "Would you like to cascade on delete?",
         default: false,
@@ -240,7 +244,7 @@ export async function buildSchema() {
       scaffoldViewsAndComponents(schema);
   } else {
     consola.warn(
-      "You need to have an ORM installed in order to use the scaffold command."
+      "You need to have an ORM installed in order to use the scaffold command.",
     );
     addPackage();
   }

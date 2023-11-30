@@ -1,8 +1,10 @@
 import { DBProvider, DBType, ORMType } from "../../../../types.js";
+import { readConfigFile } from "../../../../utils.js";
+import { formatFilePath, getFilePaths } from "../../../filePaths/index.js";
 import {
-  DrizzleAdapterDriverMappings,
+  generateDrizzleAdapterDriverMappings,
   LuciaAdapterInfo,
-  PrismaAdapterDriverMappings,
+  generatePrismaAdapterDriverMappings,
 } from "./utils.js";
 
 const generateViewsAndComponents = (withShadCn: boolean) => {
@@ -14,13 +16,21 @@ const generateViewsAndComponents = (withShadCn: boolean) => {
   return { signUpPage, signInPage, authFormComponent, homePage, loadingPage };
 };
 export const generateLoadingPage = () => {
+  const { componentLib } = readConfigFile();
+  const withShadCn = componentLib === "shadcn-ui";
   return `export default function Loading() {
   return (
-    <div className="grid place-items-center animate-pulse text-zinc-300 pt-4">
+    <div className="grid place-items-center animate-pulse ${
+      withShadCn ? "text-muted-foreground" : "text-neutral-300"
+    } p-4">
       <div role="status">
         <svg
           aria-hidden="true"
-          className="w-8 h-8 mr-2 text-gray-200 animate-spin dark:text-gray-600 fill-zinc-600"
+          className="w-8 h-8 ${
+            withShadCn
+              ? "text-muted-foreground fill-muted"
+              : "text-neutral-200 dark:text-neutral-600 fill-neutral-600"
+          } animate-spin"
           viewBox="0 0 100 101"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
@@ -42,18 +52,27 @@ export const generateLoadingPage = () => {
 `;
 };
 const generateSignUpPage = (withShadCn: boolean) => {
+  const { lucia, shared } = getFilePaths();
+  const { alias } = readConfigFile();
   if (withShadCn) {
-    return `import AuthForm from "@/components/auth/Form";
-import Link from "next/link"; import { getPageSession } from "@/lib/auth/lucia";
+    return `import AuthForm from "${formatFilePath(lucia.authFormComponent, {
+      removeExtension: true,
+      prefix: "alias",
+    })}";
+import Link from "next/link"; 
+import { getPageSession } from "${formatFilePath(lucia.libAuthLucia, {
+      prefix: "alias",
+      removeExtension: true,
+    })}";
 import { redirect } from "next/navigation";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Input } from "${alias}/components/ui/input";
+import { Label } from "${alias}/components/ui/label";
 
 const Page = async () => {
   const session = await getPageSession();
   if (session) redirect("/");
   return (
-    <main className="max-w-lg mx-auto my-4 bg-secondary p-10">
+    <main className="max-w-lg mx-auto my-4 bg-card p-10">
       <h1 className="text-2xl font-bold text-center">Create an account</h1>
       <AuthForm action="/api/sign-up">
         <Label htmlFor="username" className="text-muted-foreground">
@@ -80,33 +99,39 @@ const Page = async () => {
 export default Page;
 `;
   } else {
-    return `import AuthForm from "@/components/auth/Form";
+    return `import AuthForm from "${formatFilePath(lucia.authFormComponent, {
+      removeExtension: true,
+      prefix: "alias",
+    })}";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getUserAuth } from "@/lib/auth/utils";
+import { getUserAuth } from "${formatFilePath(shared.auth.authUtils, {
+      prefix: "alias",
+      removeExtension: true,
+    })}";
 
 const Page = async () => {
   const { session } = await getUserAuth();
   if (session) redirect("/");
   return (
-    <main className="max-w-lg mx-auto my-4 bg-slate-100 p-10">
+    <main className="max-w-lg mx-auto my-4 bg-neutral-100 p-10">
       <h1 className="text-2xl font-bold text-center">Create an account</h1>
       <AuthForm action="/api/sign-up">
         <label
           htmlFor="username"
-          className="block font-medium text-sm text-slate-500"
+          className="block font-medium text-sm text-neutral-500"
         >
           Username
         </label>
         <input
           name="username"
           id="username"
-          className="block w-full px-3 py-2 rounded-md border border-slate-200 focus:outline-slate-700"
+          className="block w-full px-3 py-2 rounded-md border border-neutral-200 focus:outline-neutral-700"
         />
         <br />
         <label
           htmlFor="password"
-          className="block font-medium text-sm text-slate-500"
+          className="block font-medium text-sm text-neutral-500"
         >
           Password
         </label>
@@ -114,11 +139,11 @@ const Page = async () => {
           type="password"
           name="password"
           id="password"
-          className="block w-full px-3 py-2 rounded-md border border-slate-200 focus:outline-slate-700"
+          className="block w-full px-3 py-2 rounded-md border border-neutral-200 focus:outline-neutral-700"
         />
         <br />
       </AuthForm>
-      <div className="mt-4 text-slate-500 text-center text-sm">
+      <div className="mt-4 text-neutral-500 text-center text-sm">
         Already have an account?{" "}
         <Link href="/sign-in" className="text-black underline hover:opacity-70">
           Sign in
@@ -134,11 +159,19 @@ export default Page;
 };
 
 const generateSignInPage = (withShadCn: boolean) => {
+  const { lucia, shared } = getFilePaths();
+  const { alias } = readConfigFile();
   if (withShadCn) {
-    return `import AuthForm from "@/components/auth/Form";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { getPageSession } from "@/lib/auth/lucia";
+    return `import AuthForm from "${formatFilePath(lucia.authFormComponent, {
+      removeExtension: true,
+      prefix: "alias",
+    })}";
+import { Input } from "${alias}/components/ui/input";
+import { Label } from "${alias}/components/ui/label";
+import { getPageSession } from "${formatFilePath(lucia.libAuthLucia, {
+      prefix: "alias",
+      removeExtension: true,
+    })}";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -146,7 +179,7 @@ const Page = async () => {
   const session = await getPageSession();
   if (session?.user) redirect("/");
   return (
-    <main className="max-w-lg mx-auto my-4 bg-secondary p-10">
+    <main className="max-w-lg mx-auto my-4 bg-card p-10">
       <h1 className="text-2xl font-bold text-center">
         Sign in to your account
       </h1>
@@ -178,8 +211,14 @@ const Page = async () => {
 export default Page;
 `;
   } else {
-    return `import AuthForm from "@/components/auth/Form";
-import { getUserAuth } from "@/lib/auth/utils";
+    return `import AuthForm from "${formatFilePath(lucia.authFormComponent, {
+      removeExtension: true,
+      prefix: "alias",
+    })}";
+import { getUserAuth } from "${formatFilePath(shared.auth.authUtils, {
+      prefix: "alias",
+      removeExtension: true,
+    })}";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -187,26 +226,26 @@ const Page = async () => {
   const { session } = await getUserAuth();
   if (session?.user) redirect("/");
   return (
-    <main className="max-w-lg mx-auto my-4 bg-slate-100 p-10">
+    <main className="max-w-lg mx-auto my-4 bg-neutral-100 p-10">
       <h1 className="text-2xl font-bold text-center">
         Sign in to your account
       </h1>
       <AuthForm action="/api/sign-in">
         <label
           htmlFor="username"
-          className="block font-medium text-sm text-slate-500"
+          className="block font-medium text-sm text-neutral-500"
         >
           Username
         </label>
         <input
           name="username"
           id="username"
-          className="block w-full px-3 py-2 rounded-md border border-slate-200 focus:outline-slate-700"
+          className="block w-full px-3 py-2 rounded-md border border-neutral-200 focus:outline-neutral-700"
         />
         <br />
         <label
           htmlFor="password"
-          className="block font-medium text-sm text-slate-500"
+          className="block font-medium text-sm text-neutral-500"
         >
           Password
         </label>
@@ -214,11 +253,11 @@ const Page = async () => {
           type="password"
           name="password"
           id="password"
-          className="block w-full px-3 py-2 rounded-md border border-slate-200 focus:outline-slate-700"
+          className="block w-full px-3 py-2 rounded-md border border-neutral-200 focus:outline-neutral-700"
         />
         <br />
       </AuthForm>
-      <div className="mt-4 text-sm text-center text-slate-500">
+      <div className="mt-4 text-sm text-center text-neutral-500">
         Don&apos;t have an account yet?{" "}
         <Link href="/sign-up" className="text-black underline hover:opacity-70">
           Create an account
@@ -234,12 +273,13 @@ export default Page;
 };
 
 const generateAuthFormComponent = (withShadCn: boolean) => {
+  const { alias } = readConfigFile();
   if (withShadCn) {
     return `"use client";
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Button } from "../ui/button";
+import { Button } from "${alias}/components/ui/button";
 
 type Action = "/api/sign-in" | "/api/sign-up" | "/api/sign-out";
 
@@ -403,7 +443,7 @@ const SubmitButton = ({
     <button
       type="submit"
       className={\`p-2.5 rounded-md font-medium text-white text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed \${
-        action === "/api/sign-out" ? "bg-red-500" : "bg-slate-900 w-full"
+        action === "/api/sign-out" ? "bg-red-500" : "bg-neutral-900 w-full"
       }\`}
       disabled={loading}
     >
@@ -416,8 +456,16 @@ const SubmitButton = ({
 };
 
 const generateHomePage = () => {
-  return `import AuthForm from "@/components/auth/Form";
-import { getUserAuth } from "@/lib/auth/utils";
+  const { lucia, shared } = getFilePaths();
+  const { componentLib } = readConfigFile();
+  return `import AuthForm from "${formatFilePath(lucia.authFormComponent, {
+    removeExtension: true,
+    prefix: "alias",
+  })}";
+import { getUserAuth } from "${formatFilePath(shared.auth.authUtils, {
+    prefix: "alias",
+    removeExtension: true,
+  })}";
 import { redirect } from "next/navigation";
 
 export default async function Home() {
@@ -426,7 +474,11 @@ export default async function Home() {
   return (
     <main className="">
       <h1 className="text-2xl font-bold my-2">Profile</h1>
-      <pre className="bg-slate-100 dark:bg-slate-800 p-6 rounded-lg my-2">
+      <pre className="${
+        componentLib === "shadcn-ui"
+          ? "bg-card"
+          : "bg-neutral-100 dark:bg-neutral-800"
+      } p-4 rounded-lg my-2">
         {JSON.stringify(session, null, 2)}
       </pre>
       <AuthForm action="/api/sign-out" />
@@ -437,7 +489,11 @@ export default async function Home() {
 };
 
 const generateApiRoutes = () => {
-  const signUpRoute = `import { auth } from "@/lib/auth/lucia";
+  const { lucia } = getFilePaths();
+  const signUpRoute = `import { auth } from "${formatFilePath(
+    lucia.libAuthLucia,
+    { prefix: "alias", removeExtension: true },
+  )}";
 import { LuciaError } from "lucia";
 import * as context from "next/headers";
 import { NextResponse } from "next/server";
@@ -528,7 +584,10 @@ export const POST = async (request: NextRequest) => {
   }
 };
 `;
-  const signInRoute = `import { auth } from "@/lib/auth/lucia";
+  const signInRoute = `import { auth } from "${formatFilePath(
+    lucia.libAuthLucia,
+    { prefix: "alias", removeExtension: true },
+  )}";
 import * as context from "next/headers";
 import { NextResponse } from "next/server";
 import { LuciaError } from "lucia";
@@ -611,7 +670,10 @@ export const POST = async (request: NextRequest) => {
   }
 };
 `;
-  const signOutRoute = `import { auth } from "@/lib/auth/lucia";
+  const signOutRoute = `import { auth } from "${formatFilePath(
+    lucia.libAuthLucia,
+    { prefix: "alias", removeExtension: true },
+  )}";
 import * as context from "next/headers";
 
 import type { NextRequest } from "next/server";
@@ -641,10 +703,14 @@ export const POST = async (request: NextRequest) => {
 };
 
 const generateAppDTs = () => {
+  const { lucia } = getFilePaths();
   return `// app.d.ts
 /// <reference types="lucia" />
 declare namespace Lucia {
-  type Auth = import("@/lib/auth/lucia").Auth;
+  type Auth = import("${formatFilePath(lucia.libAuthLucia, {
+    prefix: "alias",
+    removeExtension: true,
+  })}").Auth;
   type DatabaseUserAttributes = {
     username: string;
     name: string;
@@ -658,17 +724,24 @@ declare namespace Lucia {
 const generateAuthDirFiles = (
   orm: ORMType,
   dbType: DBType,
-  provider: DBProvider
+  provider: DBProvider,
 ) => {
+  const { lucia } = getFilePaths();
   let mappings: LuciaAdapterInfo;
+  const DrizzleAdapterDriverMappings = generateDrizzleAdapterDriverMappings();
+  const PrismaAdapterDriverMappings = generatePrismaAdapterDriverMappings();
+
   if (orm === "drizzle")
     mappings = DrizzleAdapterDriverMappings[dbType][provider];
   if (orm === "prisma") mappings = PrismaAdapterDriverMappings;
 
   const utilsTs = `import { redirect } from "next/navigation";
-import { getPageSession } from "./lucia";
+import { getPageSession } from "${formatFilePath(lucia.libAuthLucia, {
+    removeExtension: true,
+    prefix: "alias",
+  })}";
 
-type AuthSession = {
+export type AuthSession = {
   session: {
     user: {
       id: string;

@@ -1,9 +1,14 @@
 import { consola } from "consola";
 import { DBProvider, DBType, PMType } from "../../../types.js";
-import { pmInstallCommand, replaceFile } from "../../../utils.js";
+import {
+  pmInstallCommand,
+  readConfigFile,
+  replaceFile,
+} from "../../../utils.js";
 import { execa } from "execa";
 import fs from "fs";
 import path from "path";
+import stripJsonComments from "strip-json-comments";
 
 export const generateDbUrl = (dbType: DBType, provider?: DBProvider) => {
   let databaseUrl = "";
@@ -48,15 +53,16 @@ export const prismaFormat = async (packageManager: PMType) => {
 
 export async function updateTsConfigPrismaTypeAlias() {
   // Define the path to the tsconfig.json file
+  const { alias } = readConfigFile();
   const tsConfigPath = path.join(process.cwd(), "tsconfig.json");
 
   // Read the file
   const data = fs.readFileSync(tsConfigPath, "utf8");
   // Parse the content as JSON
-  const tsConfig = JSON.parse(data);
+  const tsConfig = JSON.parse(stripJsonComments(data));
 
   // Modify the target property
-  tsConfig.compilerOptions.paths["@/zodAutoGenSchemas"] = [
+  tsConfig.compilerOptions.paths[`${alias}/zodAutoGenSchemas`] = [
     "./prisma/zod/index",
   ];
 

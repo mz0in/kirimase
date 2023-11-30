@@ -1,7 +1,13 @@
 import { consola } from "consola";
-import { AvailablePackage, PackageType } from "../../types.js";
+import {
+  AuthSubType,
+  AuthType,
+  AvailablePackage,
+  PackageType,
+} from "../../types.js";
 import { readConfigFile, replaceFile } from "../../utils.js";
 import fs from "fs";
+import { formatFilePath, getFilePaths } from "../filePaths/index.js";
 
 export const Packages: {
   [key in PackageType]: {
@@ -18,13 +24,14 @@ export const Packages: {
     { name: "Auth.js (NextAuth)", value: "next-auth" },
     { name: "Clerk", value: "clerk" },
     { name: "Lucia", value: "lucia" },
+    { name: "Kinde", value: "kinde" },
   ],
   misc: [
     { name: "TRPC", value: "trpc" },
     { name: "Stripe", value: "stripe" },
     { name: "Resend", value: "resend" },
   ],
-  componentLib: [{ name: "Shadcn UI", value: "shadcn-ui" }],
+  componentLib: [{ name: "Shadcn UI (with next-themes)", value: "shadcn-ui" }],
 };
 
 export const addContextProviderToLayout = (
@@ -34,9 +41,9 @@ export const addContextProviderToLayout = (
     | "ShadcnToast"
     | "ClerkProvider"
     | "Navbar"
-    | "ThemeProvider"
+    | "ThemeProvider",
 ) => {
-  const { hasSrc } = readConfigFile();
+  const { hasSrc, alias } = readConfigFile();
   const path = `${hasSrc ? "src/" : ""}app/layout.tsx`;
 
   const fileContent = fs.readFileSync(path, "utf-8");
@@ -48,26 +55,36 @@ export const addContextProviderToLayout = (
   const beforeImport = fileContent.slice(0, nextLineAfterLastImport);
   const afterImport = fileContent.slice(nextLineAfterLastImport);
 
+  const { trpc, "next-auth": nextAuth, shared } = getFilePaths();
+
   let importStatement: string;
   switch (provider) {
     case "NextAuthProvider":
-      importStatement = `import NextAuthProvider from "@/lib/auth/Provider";`;
+      importStatement = `import NextAuthProvider from "${formatFilePath(
+        nextAuth.authProviderComponent,
+        { prefix: "alias", removeExtension: true },
+      )}";`;
       break;
     case "TrpcProvider":
-      importStatement = `import TrpcProvider from "@/lib/trpc/Provider";`;
+      importStatement = `import TrpcProvider from "${formatFilePath(
+        trpc.trpcProvider,
+        { removeExtension: true, prefix: "alias" },
+      )}";\nimport { cookies } from "next/headers";`;
       break;
     case "ShadcnToast":
-      importStatement = `import { Toaster } from "@/components/ui/toaster";`;
+      importStatement = `import { Toaster } from "${alias}/components/ui/toaster";`;
       break;
     case "ClerkProvider":
       importStatement = 'import { ClerkProvider } from "@clerk/nextjs";';
       break;
     case "Navbar":
-      importStatement = 'import Navbar from "@/components/Navbar";';
+      importStatement = `import Navbar from "${formatFilePath(
+        shared.auth.navbarComponent,
+        { prefix: "alias", removeExtension: true },
+      )}";`;
       break;
     case "ThemeProvider":
-      importStatement =
-        'import { ThemeProvider } from "@/components/ThemeProvider";';
+      importStatement = `import { ThemeProvider } from "${alias}/components/ThemeProvider";`;
       break;
   }
 
@@ -81,17 +98,20 @@ export const addContextProviderToLayout = (
   const navbarExists = fileContent.includes("<Navbar />");
   const rootChildrenText = !navbarExists
     ? "{children}"
-    : `<main className="max-w-3xl mx-auto md:p-0 p-6">\n<Navbar />\n{children}\n</main>`;
+    : `<div>\n<Navbar />\n<main className="max-w-3xl mx-auto md:p-0 px-4 mt-4">\n{children}\n</main>\n</div>`;
   let replacementText = "";
   switch (provider) {
     case "ShadcnToast":
       replacementText = `${rootChildrenText}\n<Toaster />\n`;
       break;
     case "Navbar":
-      replacementText = `<main className="max-w-3xl mx-auto md:p-0 p-6">\n<Navbar />\n{children}\n</main>`;
+      replacementText = `<div>\n<Navbar />\n<main className="max-w-3xl mx-auto md:p-0 px-4 mt-4">\n{children}\n</main>\n</div>`;
       break;
     case "ThemeProvider":
       replacementText = `\n<${provider} attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>${rootChildrenText}</${provider}>\n`;
+      break;
+    case "TrpcProvider":
+      replacementText = `\n<${provider} cookies={cookies().toString()}>${rootChildrenText}</${provider}>\n`;
       break;
     default:
       replacementText = `\n<${provider}>${rootChildrenText}</${provider}>\n`;
@@ -100,10 +120,17 @@ export const addContextProviderToLayout = (
 
   const searchValue = !navbarExists
     ? "{children}"
-    : `<main className="max-w-3xl mx-auto md:p-0 p-6">\n<Navbar />\n{children}\n</main>`;
+    : `<div>\n<Navbar />\n<main className="max-w-3xl mx-auto md:p-0 px-4 mt-4">\n{children}\n</main>\n</div>`;
   const newLayoutContent = modifiedImportContent.replace(
     searchValue,
-    replacementText
+    replacementText,
   );
   replaceFile(path, newLayoutContent);
+};
+
+export const AuthSubTypeMapping: Record<AuthType, AuthSubType> = {
+  clerk: "managed",
+  kinde: "managed",
+  "next-auth": "self-hosted",
+  lucia: "managed",
 };
